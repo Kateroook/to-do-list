@@ -7,9 +7,27 @@ const socket = io("http://localhost:5000");
 
 export default function ListTask({ tasks, updateTask, deleteTask }) {
     const [taskList, setTaskList] = useState([]);
+    const [draggingTaskId, setDraggingTaskId] = useState(null);
 
+    // useEffect(() => {
+    //     setTaskList(tasks);
+    // }, [tasks]);
     useEffect(() => {
         setTaskList(tasks);
+
+        // Listen for task dragging events
+        socket.on('taskDragging', (taskId) => {
+            setDraggingTaskId(taskId); 
+        });
+
+        socket.on('taskNotDragging', () => {
+            setDraggingTaskId(null); 
+        });
+
+        return () => {
+            socket.off('taskDragging');
+            socket.off('taskNotDragging');
+        };
     }, [tasks]);
 
     const handleDrop = (item, targetStatus, targetIndex) => {
@@ -55,18 +73,20 @@ export default function ListTask({ tasks, updateTask, deleteTask }) {
                     tasks={taskList}
                     handleDrop={handleDrop}
                     deleteTask={deleteTask}
+                    draggingTaskId={draggingTaskId}
                 />
             ))}
         </div>
     );
 }
 
-function Section({ status, tasks, handleDrop, deleteTask }) {
+function Section({ status, tasks, handleDrop, deleteTask, draggingTaskId}) {
     const text = status === "todo" ? "To Do" : status === "progress" ? "In Progress" : "Done";
     const tasksToMap = tasks.filter((task) => task.status === status);
+
     const [{ isOver }, drop] = useDrop(() => ({
         accept: "task",
-        drop: (item, monitor) => {
+        drop: (item) => {
             const index = tasksToMap.length; 
             const targetIndex = tasksToMap.length - 1; 
             handleDrop(item, status, targetIndex); 
@@ -80,14 +100,19 @@ function Section({ status, tasks, handleDrop, deleteTask }) {
         <div ref={drop} className={`column ${status}`} style={{ backgroundColor: isOver ? "#e0ffe0" : "" }}>
             <h2>{text}</h2>
             {tasksToMap.map((task, index) => (
-                <Task task={task} deleteTask={deleteTask} key={task.id} index={index} />
+                <Task task={task}
+                 deleteTask={deleteTask}
+                  key={task.id}
+                  index={index}
+                  isDragging={draggingTaskId === task.id}  
+                />
             ))}
         </div>
     );
 }
 
-function Task({ task, deleteTask, index }) {
-    const [{ isDragging }, drag] = useDrag(() => ({
+function Task({ task, deleteTask, index, isDragging }) {
+    const [{ isDragging: dragging  }, drag] = useDrag(() => ({
         type: "task",
         item: { id: task.id, status: task.status, index },
         collect: (monitor) => ({
@@ -95,24 +120,40 @@ function Task({ task, deleteTask, index }) {
         }),
     }));
 
+    const handleDragStart = () => {
+        socket.emit("dragStart", task.id); // Emit drag start event with task ID
+    };
+
+    const handleDragEnd = () => {
+        socket.emit("dragEnd"); // Emit drag end event
+    };
     return (
         <div
             ref={drag}
-            className={`task ${isDragging ? "dragging" : ""}`}
+            className={`task ${isDragging || dragging ? "dragging" : ""}`}
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={{
-                backgroundColor: isDragging ? "#e0ffe0" : "#f5f5f5",
-                border: isDragging ? "2px solid #4CAF50" : "1px solid #ddd",
-                opacity: isDragging ? 0.7 : 1,
-                transition: "background-color 0.2s, border 0.2s",
+                backgroundColor: (isDragging || dragging) ? "#e0ffe0" : "#f5f5f5",
+                border: (isDragging || dragging) ? "2px solid #4CAF50" : "1px solid #ccc", 
+                opacity: (isDragging || dragging) ? 0.7 : 1,
+                padding: "10px", 
+                borderRadius: "8px",
+                marginBottom: "10px", 
+                display: "flex",
+                justifyContent: "space-between", 
+                alignItems: "center",
+                transition: "background-color 0.2s, border 0.2s, opacity 0.2s",
+                boxShadow: (isDragging || dragging) ? "0 4px 8px rgba(0, 0, 0, 0.2)" : "none",
             }}
         >
-            <span>{task.name}</span>
+            <span style={{ fontWeight: "bold", color: "#333" }}>{task.name}</span>
             <i 
                 className="fas fa-trash delete-icon"
-                onClick={() => 
-                deleteTask(task.id)} style={{ marginLeft: "10px", cursor: "pointer" }}>           
-                
-            </i>
+                onClick={() => deleteTask(task.id)}
+                style={{ marginLeft: "10px", cursor: "pointer", color: "#ff4d4d" }} // Delete icon color
+            />
         </div>
     );
 }

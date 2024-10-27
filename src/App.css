@@ -87,3 +87,8 @@
   .delete-icon:hover {
     color: #c70000; 
   }
+
+  .dragging {
+    background-color: #e0ffe0 !important; /* or whatever color you prefer */
+    border: 2px solid #4CAF50 !important; /* Highlight border */
+}
